@@ -11,21 +11,27 @@ func main() {
 	nums := make(chan int)
 	results := make(chan int)
 	errors := make(chan error)
+
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// Generator
 	go generator(nums, ctx)
+
+	// Start worker
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
 		go worker(nums, results, errors, &wg)
 	}
+	// Monitor Results closing in another goroutine
 	go func() {
 		wg.Wait()
 		close(results)
 	}()
+	// Error handling
 	go func() {
 		for error := range errors {
-			errors <- fmt.Errorf("error: %s", error.Error())
+			fmt.Println("🚨 Bắt được lỗi:", error)
 			cancel()
 		}
 	}()
@@ -36,18 +42,24 @@ func generator(nums chan int, ctx context.Context) {
 	for i := 1; i <= 100; i++ {
 		select {
 		case <-ctx.Done():
+			fmt.Println("Generator: Bị hủy!")
+			// Quan trọng: Phải đóng nums để các worker thoát vòng lặp range
+			close(nums)
 			return
 		case nums <- i:
 		}
 	}
-	close(nums)
 }
 
 func worker(nums <-chan int, results chan int, errors chan<- error, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for num := range nums {
 		if num == 50 {
-			errors <- fmt.Errorf("Lỗi nghiêm trọng tại số 50")
+			select {
+			case errors <- fmt.Errorf("Lỗi nghiêm trọng tại số 50"):
+			default:
+			}
+			return
 		}
 		time.Sleep(10 * time.Millisecond)
 		results <- num * num
